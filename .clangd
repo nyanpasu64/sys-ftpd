@@ -1,0 +1,7 @@
+CompileFlags:
+  CompilationDatabase: build/       # Search build/ directory for compile_commands.json
+
+  # remove command line options clangd doesn't like.
+  Remove:
+    - '-Werror'
+    - '-mtp=soft'
