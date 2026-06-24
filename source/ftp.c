@@ -1135,7 +1135,7 @@ ftp_send_response_buffer(ftp_session_t* session,
 
     /* send response */
     to_send = len;
-    console_print(GREEN "%s" RESET, buffer);
+    console_print(GREEN "%.*s" RESET, (int)len, buffer);
     rc = send(session->cmd_fd, buffer, to_send, 0);
     if (rc < 0)
     {
