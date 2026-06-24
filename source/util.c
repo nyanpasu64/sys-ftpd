@@ -26,7 +26,7 @@ void initPads()
     padInitializeAny(&pad);
 }
 
-void inputPoller()
+void inputPoller(void* /* unused */)
 {
     do
     {

@@ -48,7 +48,7 @@
 #define CMD_BUFFERSIZE 0x1000
 
 int LISTEN_PORT;
-//#define LISTEN_PORT 5000
+// #define LISTEN_PORT 5000
 #ifdef _3DS
 #    define DATA_PORT (LISTEN_PORT + 1)
 #else
@@ -195,12 +195,14 @@ static ftp_command_t ftp_commands[] =
 /*! ftp command */
 #define FTP_COMMAND(x) \
     {                  \
-#        x, x,         \
+        #x,            \
+        x,             \
     }
 /*! ftp alias */
 #define FTP_ALIAS(x, y) \
     {                   \
-#        x, y,          \
+        #x,             \
+        y,              \
     }
         FTP_COMMAND(ABOR),
         FTP_COMMAND(ALLO),
@@ -893,11 +895,17 @@ ftp_session_fill_dirent_type(ftp_session_t* session, const struct stat* st,
         session->buffersize +=
             sprintf(session->buffer + session->buffersize,
                     "%c%c%c%c%c%c%c%c%c%c %lu 3DS 3DS %lld ",
-                    S_ISREG(st->st_mode) ? '-' : S_ISDIR(st->st_mode) ? 'd' :
+                    S_ISREG(st->st_mode) ? '-' : S_ISDIR(st->st_mode) ? 'd'
+                                             :
 #if !defined(_3DS) && !defined(__SWITCH__)
-                                                                      S_ISLNK(st->st_mode) ? 'l' : S_ISCHR(st->st_mode) ? 'c' : S_ISBLK(st->st_mode) ? 'b' : S_ISFIFO(st->st_mode) ? 'p' : S_ISSOCK(st->st_mode) ? 's' :
+                                             S_ISLNK(st->st_mode)    ? 'l'
+                                             : S_ISCHR(st->st_mode)  ? 'c'
+                                             : S_ISBLK(st->st_mode)  ? 'b'
+                                             : S_ISFIFO(st->st_mode) ? 'p'
+                                             : S_ISSOCK(st->st_mode) ? 's'
+                                                                     :
 #endif
-                                                                                                                                                                                                                 '?',
+                                                                     '?',
                     st->st_mode & S_IRUSR ? 'r' : '-',
                     st->st_mode & S_IWUSR ? 'w' : '-',
                     st->st_mode & S_IXUSR ? 'x' : '-',
@@ -1842,7 +1850,7 @@ update_status(void)
     //                  inet_ntoa(serv_addr.sin_addr),
     //                ntohs(serv_addr.sin_port));
     update_free_space();
-#elif 0 //defined(__SWITCH__)
+#elif 0 // defined(__SWITCH__)
     char hostname[128];
     socklen_t addrlen = sizeof(serv_addr);
     int rc;
@@ -2108,7 +2116,7 @@ ftp_loop(void)
         apt_hook(APTHOOK_ONRESTORE, NULL);
     }
 #elif defined(__SWITCH__)
-        /* check if the user wants to exit */
+    /* check if the user wants to exit */
 #endif
 
     return LOOP_CONTINUE;
@@ -2368,12 +2376,12 @@ list_transfer(ftp_session_t* session)
 
             if (rc != 0)
             {
-#ifndef __SWITCH__
+#    ifndef __SWITCH__
                 /* an error occurred */
                 ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
                 ftp_send_response(session, 550, "unavailable\r\n");
                 return LOOP_EXIT;
-#else
+#    else
                 // probably archive bit set; list name with dummy stats
                 memset(&st, 0, sizeof(st));
                 console_print(RED "%s: type %u\n" RESET, dent->d_name, dent->d_type);
@@ -2408,7 +2416,7 @@ list_transfer(ftp_session_t* session)
                     st.st_mode = S_IFSOCK;
                     break;
                 }
-#endif
+#    endif
             }
 #endif
             /* encode \n in path */
@@ -3558,7 +3566,7 @@ FTP_DECLARE(PASV)
  */
 FTP_DECLARE(PORT)
 {
-    char *addrstr, *p, *portstr;
+    char *addrstr, *p, *portstr = NULL;
     int commas = 0, rc;
     short port = 0;
     unsigned long val;
