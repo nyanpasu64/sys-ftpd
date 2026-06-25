@@ -381,6 +381,52 @@ ftp_set_socket_options(int fd)
     return 0;
 }
 
+/// Even though we set linger to 0 seconds,
+/// the OS still takes several seconds to clean up socket memory after close(),
+/// leading to OOM-induced errors when transferring directory trees.
+/// If we shrink socket buffers to 1 byte before closing, we can greatly delay these errors.
+static int
+ftp_shrink_socket(int fd)
+{
+    int rc;
+    int ret = 0;
+
+    int stub_buffersize = 1;
+
+    /* stub out receive buffer */
+    rc = setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+                    &stub_buffersize, sizeof(stub_buffersize));
+    if (rc != 0)
+    {
+        console_print(RED "ftp_shrink_socket() setsockopt: SO_RCVBUF %d %s\n" RESET, errno, strerror(errno));
+        ret = -1;
+    }
+
+    /* stub out send buffer */
+    rc = setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+                    &stub_buffersize, sizeof(stub_buffersize));
+    if (rc != 0)
+    {
+        console_print(RED "ftp_shrink_socket() setsockopt: SO_SNDBUF %d %s\n" RESET, errno, strerror(errno));
+        ret = -1;
+    }
+
+    return ret;
+}
+
+typedef enum SocketCloseType
+{
+    SocketListen,
+    SocketDisconneced = SocketListen,
+    SocketConnected,
+} SocketCloseType;
+
+typedef enum ShouldShrinkSocket
+{
+    ShrinkNo,
+    ShrinkYes,
+} ShouldShrinkSocket;
+
 /*! close a socket
  *
  *  @param[in] fd        socket to close
@@ -388,7 +434,8 @@ ftp_set_socket_options(int fd)
  */
 static void
 ftp_closesocket(int fd,
-                bool connected)
+                SocketCloseType connected,
+                ShouldShrinkSocket shrink)
 {
     int rc;
     struct sockaddr_in addr;
@@ -397,7 +444,8 @@ ftp_closesocket(int fd,
 
     //  console_print("0x%X\n", socketGetLastBsdResult());
 
-    if (connected)
+    // nothing to shutdown for a listen-only socket
+    if (connected == SocketConnected)
     {
         /* get peer address and print */
         rc = getpeername(fd, (struct sockaddr*)&addr, &addrlen);
@@ -434,6 +482,16 @@ ftp_closesocket(int fd,
         console_print(RED "setsockopt: SO_LINGER %d %s\n" RESET,
                       errno, strerror(errno));
 
+    // pasv_fd -> data_fd have ftp_set_socket_options() called and need to be shrunken.
+    // listenfd -> cmd_fd do not need to be shrunken.
+    // I placed this call *after* shutdown(), so if the client is still sending data
+    // we won't fetch 1 byte at a time over the network.
+    if (shrink == ShrinkYes)
+    {
+        // Do we need to shrink listen sockets? I don't care enough to test.
+        ftp_shrink_socket(fd);
+    }
+
     /* close socket */
     rc = close(fd);
     if (rc != 0)
@@ -449,7 +507,7 @@ ftp_session_close_cmd(ftp_session_t* session)
 {
     /* close command socket */
     if (session->cmd_fd >= 0)
-        ftp_closesocket(session->cmd_fd, true);
+        ftp_closesocket(session->cmd_fd, SocketConnected, ShrinkNo);
     session->cmd_fd = -1;
 }
 
@@ -467,7 +525,7 @@ ftp_session_close_pasv(ftp_session_t* session)
                       inet_ntoa(session->pasv_addr.sin_addr),
                       ntohs(session->pasv_addr.sin_port));
 
-        ftp_closesocket(session->pasv_fd, false);
+        ftp_closesocket(session->pasv_fd, SocketListen, ShrinkYes);
     }
 
     session->pasv_fd = -1;
@@ -482,7 +540,7 @@ ftp_session_close_data(ftp_session_t* session)
 {
     /* close data connection */
     if (session->data_fd >= 0 && session->data_fd != session->cmd_fd)
-        ftp_closesocket(session->data_fd, true);
+        ftp_closesocket(session->data_fd, SocketConnected, ShrinkYes);
     session->data_fd = -1;
 
     /* clear send/recv flags */
@@ -1257,7 +1315,7 @@ ftp_session_new(int listen_fd)
     if (session == NULL)
     {
         console_print(RED "failed to allocate session\n" RESET);
-        ftp_closesocket(new_fd, true);
+        ftp_closesocket(new_fd, SocketConnected, ShrinkNo);
         return -1;
     }
 
@@ -1339,7 +1397,8 @@ ftp_session_accept(ftp_session_t* session)
         rc = ftp_set_socket_nonblocking(new_fd);
         if (rc != 0)
         {
-            ftp_closesocket(new_fd, true);
+            // pasv_fd has large buffers so new_fd will inherit them, and must be shrunken.
+            ftp_closesocket(new_fd, SocketConnected, ShrinkYes);
             ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
             ftp_send_response(session, 425, "Failed to establish connection\r\n");
             return -1;
@@ -1388,7 +1447,7 @@ ftp_session_connect(ftp_session_t* session)
     rc = ftp_set_socket_options(session->data_fd);
     if (rc != 0)
     {
-        ftp_closesocket(session->data_fd, false);
+        ftp_closesocket(session->data_fd, SocketDisconneced, ShrinkYes);
         session->data_fd = -1;
         return -1;
     }
@@ -1406,7 +1465,7 @@ ftp_session_connect(ftp_session_t* session)
         if (errno != EINPROGRESS)
         {
             console_print(RED "connect: %d %s\n" RESET, errno, strerror(errno));
-            ftp_closesocket(session->data_fd, false);
+            ftp_closesocket(session->data_fd, SocketDisconneced, ShrinkYes);
             session->data_fd = -1;
             return -1;
         }
@@ -2040,7 +2099,7 @@ void ftp_exit(void)
 
     /* stop listening for new clients */
     if (listenfd >= 0)
-        ftp_closesocket(listenfd, false);
+        ftp_closesocket(listenfd, SocketListen, ShrinkNo);
 
     /* deinitialize socket driver */
     console_render();
