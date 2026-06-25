@@ -26,6 +26,7 @@ void console_print(const char* fmt, ...)
     if (should_log)
     {
         stdout = stderr = fopen("/config/sys-ftpd/logs/ftpd.log", "a");
+        setvbuf(stdout, NULL, _IONBF, 0);
         va_list ap;
         va_start(ap, fmt);
         vprintf(fmt, ap);
@@ -39,6 +40,7 @@ void debug_print(const char* fmt, ...)
     if (should_log)
     {
         stdout = stderr = fopen("/config/sys-ftpd/logs/ftpd.log", "a");
+        setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef ENABLE_LOGGING
         va_list ap;
         va_start(ap, fmt);
