@@ -60,7 +60,7 @@ void __appInit(void)
         .tcp_tx_buf_max_size = 0x25000,
         .tcp_rx_buf_max_size = 0x25000,
 
-        //We don't use UDP, set all UDP buffers to 0
+        // We don't use UDP, set all UDP buffers to 0
         .udp_tx_buf_size = 0,
         .udp_rx_buf_size = 0,
 
@@ -117,7 +117,7 @@ int main(int argc, char** argv)
 
     initPads();
 
-    //Checks if pausing is disabled in the config file, in which case it skips the entire pause initialization
+    // Checks if pausing is disabled in the config file, in which case it skips the entire pause initialization
     if (strncmp(buffer, "1", 4) != 0)
     {
         Result rc = pauseInit();
@@ -128,8 +128,14 @@ int main(int argc, char** argv)
     loop_status_t status = LOOP_RESTART;
 
     ftp_pre_init();
-    while (status == LOOP_RESTART)
+    while (true)
     {
+        // rate-limit upon error
+        if (status == LOOP_EXIT)
+        {
+            svcSleepThread(5e+9);
+        }
+
         while (isPaused())
         {
             svcSleepThread(1e+9);
@@ -147,9 +153,9 @@ int main(int argc, char** argv)
         else
             status = LOOP_EXIT;
     }
-    ftp_post_exit();
+    // ftp_post_exit();
 
-    pauseExit();
+    // pauseExit();
 
-    return 0;
+    // return 0;
 }
