@@ -135,7 +135,7 @@ int main(int argc, char** argv)
         // rate-limit upon error
         if (status == LOOP_EXIT)
         {
-            svcSleepThread(5e+9);
+            svcSleepThread(1500e+6);
         }
 
         while (isPaused())
