@@ -1208,6 +1208,9 @@ ftp_send_response_buffer(ftp_session_t* session,
     }
 }
 
+// Additional space scoped within a command.
+static char tmp_buf[CMD_BUFFERSIZE];
+
 __attribute__((format(printf, 3, 4)))
 /*! send ftp response to ftp session's peer
  *
@@ -1221,7 +1224,7 @@ ftp_send_response(ftp_session_t* session,
                   int code,
                   const char* fmt, ...)
 {
-    static char buffer[CMD_BUFFERSIZE];
+    // { borrow tmp_buf
     ssize_t rc;
     va_list ap;
 
@@ -1231,23 +1234,24 @@ ftp_send_response(ftp_session_t* session,
     /* print response code and message to buffer */
     va_start(ap, fmt);
     if (code > 0)
-        rc = sprintf(buffer, "%d ", code);
+        rc = sprintf(tmp_buf, "%d ", code);
     else
-        rc = sprintf(buffer, "%d-", -code);
-    rc += vsnprintf(buffer + rc, sizeof(buffer) - rc, fmt, ap);
+        rc = sprintf(tmp_buf, "%d-", -code);
+    rc += vsnprintf(tmp_buf + rc, sizeof(tmp_buf) - rc, fmt, ap);
     va_end(ap);
 
-    if (rc >= sizeof(buffer))
+    if (rc >= sizeof(tmp_buf))
     {
         /* couldn't fit message; just send code */
         console_print(RED "%s: buffersize too small\n" RESET, __func__);
         if (code > 0)
-            rc = sprintf(buffer, "%d \r\n", code);
+            rc = sprintf(tmp_buf, "%d \r\n", code);
         else
-            rc = sprintf(buffer, "%d-\r\n", -code);
+            rc = sprintf(tmp_buf, "%d-\r\n", -code);
     }
 
-    ftp_send_response_buffer(session, buffer, rc);
+    ftp_send_response_buffer(session, tmp_buf, rc);
+    // } tmp_buf
 }
 
 /*! destroy ftp session
@@ -3737,8 +3741,7 @@ FTP_DECLARE(PORT)
  */
 FTP_DECLARE(PWD)
 {
-    static char buffer[CMD_BUFFERSIZE];
-    size_t len = sizeof(buffer), i;
+    size_t len = sizeof(tmp_buf), i;
     char* path;
 
     console_print(CYAN "%s %s\n" RESET, __func__, args ? args : "");
@@ -3752,26 +3755,31 @@ FTP_DECLARE(PWD)
     path = encode_path(session->cwd, &len, true);
     if (path != NULL)
     {
-        i = sprintf(buffer, "257 \"");
-        if (i + len + 3 > sizeof(buffer))
+        // { borrow tmp_buf
+        i = sprintf(tmp_buf, "257 \"");
+        if (i + len + 3 > sizeof(tmp_buf))
         {
             /* buffer will overflow */
+            // } tmp_buf
             free(path);
             ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
+            // ftp_send_response borrows tmp_buf
             ftp_send_response(session, 550, "%s\r\n", strerror(EOVERFLOW));
             return;
         }
-        memcpy(buffer + i, path, len);
+        memcpy(tmp_buf + i, path, len);
         free(path);
         len += i;
-        buffer[len++] = '"';
-        buffer[len++] = '\r';
-        buffer[len++] = '\n';
+        tmp_buf[len++] = '"';
+        tmp_buf[len++] = '\r';
+        tmp_buf[len++] = '\n';
 
-        ftp_send_response_buffer(session, buffer, len);
+        ftp_send_response_buffer(session, tmp_buf, len);
+        // } tmp_buf
         return;
     }
 
+    // ftp_send_response borrows tmp_buf
     ftp_send_response(session, 425, "%s\r\n", strerror(ENOMEM));
 }
 
@@ -3959,7 +3967,7 @@ FTP_DECLARE(RNFR)
  */
 FTP_DECLARE(RNTO)
 {
-    static char rnfr[XFER_BUFFERSIZE]; // rename-from buffer
+    char* rnfr = tmp_buf; // rename-from buffer
     int rc;
 
     console_print(CYAN "%s %s\n" RESET, __func__, args ? args : "");
@@ -3979,17 +3987,31 @@ FTP_DECLARE(RNTO)
     session->flags &= ~SESSION_RENAME;
 
     /* copy the RNFR path */
-    memcpy(rnfr, session->buffer, XFER_BUFFERSIZE);
+    // { borrow rnfr=tmp_buf
+    // newlib has memccpy.
+    char* rnfr_end = memccpy(rnfr, session->buffer, '\0', sizeof tmp_buf);
+    _Static_assert(sizeof tmp_buf == CMD_BUFFERSIZE, "buffer size mismatch");
+    if (!rnfr_end)
+    {
+        // should not be possible, since ftp_session_read_command() -> RNFR() copies
+        // (session->cmd_buffer ⇒ arg) to session->buffer, and arg is shorter than
+        // CMD_BUFFERSIZE.
+        // } rnfr=tmp_buf
+        // ftp_send_response borrows tmp_buf
+        return ftp_send_response(session, 553, "source too long (unreachable?)\r\n");
+    }
 
     /* build the path to rename to */
     if (build_path(session, session->cwd, args) != 0)
     {
-        ftp_send_response(session, 554, "%s\r\n", strerror(errno));
-        return;
+        // } rnfr=tmp_buf
+        // ftp_send_response borrows tmp_buf
+        return ftp_send_response(session, 554, "%s\r\n", strerror(errno));
     }
 
     /* rename the file */
     rc = rename(rnfr, session->buffer);
+    // } rnfr=tmp_buf
     if (rc != 0)
     {
         /* rename failure */
