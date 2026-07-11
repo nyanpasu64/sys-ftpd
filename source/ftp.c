@@ -151,32 +151,32 @@ typedef enum
 /*! ftp session */
 struct ftp_session_t
 {
-    char cwd[4096];                  /*!< current working directory */
-    char lwd[4096];                  /*!< list working directory */
-    struct sockaddr_in peer_addr;    /*!< peer address for data connection */
-    struct sockaddr_in pasv_addr;    /*!< listen address for PASV connection */
-    int cmd_fd;                      /*!< socket for command connection */
-    int pasv_fd;                     /*!< listen socket for PASV */
-    int data_fd;                     /*!< socket for data transfer */
-    time_t timestamp;                /*!< time from last command */
-    session_flags_t flags;           /*!< session flags */
-    xfer_dir_mode_t dir_mode;        /*!< dir transfer mode */
-    session_mlst_flags_t mlst_flags; /*!< session MLST flags */
-    session_state_t state;           /*!< session state */
-    ftp_session_t* next;             /*!< link to next session */
-    ftp_session_t* prev;             /*!< link to prev session */
+    char cwd[4096];                  //< current working directory
+    char lwd[4096];                  //< list working directory
+    struct sockaddr_in peer_addr;    //< peer address for data connection
+    struct sockaddr_in pasv_addr;    //< listen address for PASV connection
+    int cmd_fd;                      //< socket for command connection
+    int pasv_fd;                     //< listen socket for PASV
+    int data_fd;                     //< socket for data transfer
+    time_t timestamp;                //< time from last command
+    session_flags_t flags;           //< session flags
+    xfer_dir_mode_t dir_mode;        //< dir transfer mode
+    session_mlst_flags_t mlst_flags; //< session MLST flags
+    session_state_t state;           //< session state
+    ftp_session_t* next;             //< link to next session
+    ftp_session_t* prev;             //< link to prev session
 
-    loop_status_t (*transfer)(ftp_session_t*); /*! data transfer callback */
-    char buffer[XFER_BUFFERSIZE];              /*! persistent data between callbacks */
-    char file_buffer[FILE_BUFFERSIZE];         /*! stdio file buffer */
-    char cmd_buffer[CMD_BUFFERSIZE];           /*! command buffer */
-    size_t bufferpos;                          /*! persistent buffer position between callbacks */
-    size_t buffersize;                         /*! persistent buffer size between callbacks */
+    loop_status_t (*transfer)(ftp_session_t*); // data transfer callback
+    char buffer[XFER_BUFFERSIZE];              // persistent data between callbacks
+    char file_buffer[FILE_BUFFERSIZE];         // stdio file buffer
+    char cmd_buffer[CMD_BUFFERSIZE];           // command buffer
+    size_t bufferpos;                          // persistent buffer position between callbacks
+    size_t buffersize;                         // persistent buffer size between callbacks
     size_t cmd_buffersize;
-    uint64_t filepos;  /*! persistent file position between callbacks */
-    uint64_t filesize; /*! persistent file size between callbacks */
-    FILE* fp;          /*! persistent open file pointer between callbacks */
-    DIR* dp;           /*! persistent open directory pointer between callbacks */
+    uint64_t filepos;  // persistent file position between callbacks
+    uint64_t filesize; // persistent file size between callbacks
+    FILE* fp;          // persistent open file pointer between callbacks
+    DIR* dp;           // persistent open directory pointer between callbacks
     bool user_ok;
     bool pass_ok;
     bool led;
