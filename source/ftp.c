@@ -3264,6 +3264,7 @@ FTP_DECLARE(MKD)
         ftp_send_response(session, 553, "%s\r\n", strerror(errno));
         return;
     }
+    console_print("mkdir: %s\n", session->buffer);
 
     /* try to create the directory */
     rc = mkdir(session->buffer, 0755);
