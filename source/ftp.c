@@ -3758,8 +3758,7 @@ FTP_DECLARE(PWD)
             /* buffer will overflow */
             free(path);
             ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
-            ftp_send_response(session, 550, "unavailable\r\n");
-            ftp_send_response(session, 425, "%s\r\n", strerror(EOVERFLOW));
+            ftp_send_response(session, 550, "%s\r\n", strerror(EOVERFLOW));
             return;
         }
         memcpy(buffer + i, path, len);
