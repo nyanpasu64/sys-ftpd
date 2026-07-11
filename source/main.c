@@ -88,7 +88,7 @@ static loop_status_t loop(loop_status_t (*callback)(void))
 
     while (true)
     {
-        svcSleepThread(1e+7);
+        svcSleepThread(YieldType_ToAnyThread);
         status = callback();
         console_render();
         if (status != LOOP_CONTINUE)
