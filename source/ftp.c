@@ -297,7 +297,7 @@ static int listenfd = -1;
 static in_port_t data_port = DATA_PORT;
 #endif
 /*! list of ftp sessions */
-static ftp_session_t* sessions = NULL;
+static ftp_session_t* sess_list = NULL;
 // number of FTP sessions
 static unsigned num_sessions = 0;
 /*! socket buffersize */
@@ -1277,13 +1277,13 @@ ftp_session_destroy(ftp_session_t* session)
     /* unlink from sessions list */
     if (session->next)
         session->next->prev = session->prev;
-    if (session == sessions)
-        sessions = session->next;
+    if (session == sess_list)
+        sess_list = session->next;
     else
     {
         session->prev->next = session->next;
-        if (session == sessions->prev)
-            sessions->prev = session->prev;
+        if (session == sess_list->prev)
+            sess_list->prev = session->prev;
     }
 
     /* deallocate */
@@ -1298,6 +1298,7 @@ ftp_session_destroy(ftp_session_t* session)
 /*! allocate new ftp session
  *
  *  @param[in] listen_fd socket to accept connection from
+ *  @return 0 or error code
  */
 static int
 ftp_session_new(int listen_fd)
@@ -1349,17 +1350,20 @@ ftp_session_new(int listen_fd)
     session->pass_ok = false;
     session->led = get_session_led_setting();
 
-    /* link to the sessions list */
-    if (sessions == NULL)
+    /* Add new session to end of list */
+    // This is some baffling logic... a doubly-linked half-circular list, where
+    // [0].prev wraps around to [n-1], yet [n-1].next terminates in NULL???
+    // And the words are off by a *single character*...
+    if (sess_list == NULL)
     {
-        sessions = session;
+        sess_list = session;
         session->prev = session;
     }
     else
     {
-        sessions->prev->next = session;
-        session->prev = sessions->prev;
-        sessions->prev = session;
+        sess_list->prev->next = session; // forward: install new tail
+        session->prev = sess_list->prev; // reverse: link old tail
+        sess_list->prev = session;       // reverse: install new tail
     }
     num_sessions++;
 
@@ -1732,64 +1736,17 @@ static bool is_poll_err(short revents)
     return false;
 }
 
-/*! poll sockets for ftp session
+/*! dispatch work based on poll results
  *
  *  @param[in] session ftp session
  *
- *  @returns next session
+ *  @returns next session, if present
  */
 static ftp_session_t*
-ftp_session_poll(ftp_session_t* session)
+ftp_session_dispatch(ftp_session_t* session, const struct pollfd* pollinfo, nfds_t nfds, int rc)
 {
-    int rc;
-    struct pollfd pollinfo[2];
-    nfds_t nfds = 1;
-
-    /* the first pollfd is the command socket */
-    pollinfo[0].fd = session->cmd_fd;
-    pollinfo[0].events = POLLIN | POLLPRI;
-    pollinfo[0].revents = 0;
-
-    switch (session->state)
-    {
-    case COMMAND_STATE:
-        /* we are waiting to read a command */
-        break;
-
-    case DATA_CONNECT_STATE:
-        if (session->flags & SESSION_PASV)
-        {
-            /* we are waiting for a PASV connection */
-            pollinfo[1].fd = session->pasv_fd;
-            pollinfo[1].events = POLLIN;
-        }
-        else
-        {
-            /* we are waiting to complete a PORT connection */
-            pollinfo[1].fd = session->data_fd;
-            pollinfo[1].events = POLLOUT;
-        }
-        pollinfo[1].revents = 0;
-        nfds = 2;
-        break;
-
-    case DATA_TRANSFER_STATE:
-        /* we need to transfer data */
-        pollinfo[1].fd = session->data_fd;
-        if (session->flags & SESSION_RECV)
-            pollinfo[1].events = POLLIN;
-        else
-            pollinfo[1].events = POLLOUT;
-        pollinfo[1].revents = 0;
-        nfds = 2;
-        break;
-    }
-
-    /* poll the selected sockets */
-    rc = poll(pollinfo, nfds, 0);
     if (rc < 0)
     {
-        console_print(RED "poll: %d %s\n" RESET, errno, strerror(errno));
         ftp_session_close_cmd(session);
     }
     else if (rc > 0)
@@ -2126,8 +2083,8 @@ void ftp_exit(void)
     debug_print("exiting ftp server\n");
 
     /* clean up all sessions */
-    while (sessions != NULL)
-        ftp_session_destroy(sessions);
+    while (sess_list != NULL)
+        ftp_session_destroy(sess_list);
     if (num_sessions != 0)
     {
         console_print("error, num_sessions = %u at ftp_exit()", num_sessions);
@@ -2147,56 +2104,145 @@ void ftp_post_exit(void)
 {
 }
 
+// ms
+// static const int POLL_TIMEOUT = 1000;
+static const int POLL_TIMEOUT = -1; // forever
+
 /*! ftp look
  *
  *  @returns whether to keep looping
  */
 loop_status_t
-ftp_loop(void)
+ftp_iter(void)
 {
     int rc;
-    struct pollfd pollinfo;
-    ftp_session_t* session;
+
+#define MAX_POLLFDS (1 + 2 * MAX_SESSIONS)
+
+    struct pollfd pollinfo[MAX_POLLFDS];
+    nfds_t session_to_fdend[MAX_SESSIONS] = {};
 
     /* we will poll for new client connections */
-    pollinfo.fd = listenfd;
-    pollinfo.events = POLLIN;
-    pollinfo.revents = 0;
+    pollinfo[0].fd = listenfd;
+    pollinfo[0].events = POLLIN;
+    pollinfo[0].revents = 0;
+    nfds_t nfds = 1;
 
-    /* poll for a new client */
-    rc = poll(&pollinfo, 1, 0);
+    // add fds from active sessions
+    // pollfd::events controls whether to be woken up when we can read or write data.
+    ftp_session_t* session = sess_list;
+    for (
+        int sess_idx = 0;
+        // i don't trust the linked list to remain under MAX_SESSIONS
+        sess_idx < MAX_SESSIONS && session != NULL;
+        sess_idx++, session = session->next)
+    {
+        pollinfo[nfds].fd = session->cmd_fd;
+        pollinfo[nfds].events = POLLIN | POLLPRI;
+        pollinfo[nfds].revents = 0;
+        nfds++;
+
+        switch (session->state)
+        {
+        case COMMAND_STATE:
+            /* we are waiting to read a command */
+            break;
+
+        case DATA_CONNECT_STATE:
+            if (session->flags & SESSION_PASV)
+            {
+                /* we are waiting for a PASV connection */
+                pollinfo[nfds].fd = session->pasv_fd;
+                pollinfo[nfds].events = POLLIN;
+            }
+            else
+            {
+                /* we are waiting to complete a PORT connection */
+                pollinfo[nfds].fd = session->data_fd;
+                pollinfo[nfds].events = POLLOUT;
+            }
+            pollinfo[nfds].revents = 0;
+            nfds++;
+            break;
+
+        case DATA_TRANSFER_STATE:
+            /* we need to transfer data */
+            pollinfo[nfds].fd = session->data_fd;
+            if (session->flags & SESSION_RECV)
+                pollinfo[nfds].events = POLLIN;
+            else
+                pollinfo[nfds].events = POLLOUT;
+            pollinfo[nfds].revents = 0;
+            nfds++;
+            break;
+        }
+
+        session_to_fdend[sess_idx] = nfds;
+    }
+
+    /* poll for incoming connections or readiness */
+    // On success, poll() returns a nonnegative value which is the number
+    // of elements in the pollfds whose revents fields have been set to a
+    // nonzero value (indicating an event or an error).  A return value
+    // of zero indicates that the system call timed out before any file
+    // descriptors became ready.
+    //
+    // On error, -1 is returned, and errno is set to indicate the error.
+    rc = poll(pollinfo, nfds, POLL_TIMEOUT);
     if (rc < 0)
     {
         /* wifi got disabled */
-        console_print(RED "poll: FAILED!\n" RESET);
+        console_print(RED "poll: FAILED! %d %s\n" RESET, errno, strerror(errno));
 
         if (errno == ENETDOWN)
             return LOOP_RESTART;
+        if (errno == ENOMEM)
+            // kill the first session and try again
+            if (sess_list != NULL)
+            {
+                ftp_session_dispatch(sess_list, pollinfo + 1, session_to_fdend[1] - 1, rc);
+                return LOOP_CONTINUE;
+            }
 
-        console_print(RED "poll: %d %s\n" RESET, errno, strerror(errno));
         return LOOP_EXIT;
     }
-    else if (rc > 0)
+    else if (rc == 0)
+        goto timeout_skip; // could return early but skip to later for extensibility
+
+    // dispatch new connections
+    if (pollinfo[0].revents)
     {
-        if (pollinfo.revents & POLLIN)
+        if (pollinfo[0].revents & POLLIN)
         {
             /* we got a new client */
             if (ftp_session_new(listenfd) != 0)
-            {
+                // error
                 return LOOP_RESTART;
-            }
+            else
+                // The session linked list no longer matches our pollinfo list.
+                // Call poll() again with the new list.
+                // (Since ftp_session_new() *appends* to the list, we technically could stop
+                // when fd_start >= nfds, but this is unpleasantly brittle and starves the new
+                // session of polls.)
+                return LOOP_CONTINUE;
         }
         else
         {
-            console_print(YELLOW "listenfd: revents=0x%08X\n" RESET, pollinfo.revents);
+            console_print(YELLOW "listenfd: revents=0x%08X\n" RESET, pollinfo[0].revents);
         }
     }
 
-    /* poll each session */
-    session = sessions;
-    while (session != NULL)
-        session = ftp_session_poll(session);
+    // dispatch existing sessions
+    nfds_t fd_start = 1;
+    session = sess_list;
+    for (int sess_idx = 0; sess_idx < MAX_SESSIONS && session != NULL; sess_idx++)
+    {
+        const nfds_t fd_end = session_to_fdend[sess_idx];
+        session = ftp_session_dispatch(session, pollinfo + fd_start, fd_end - fd_start, rc);
+        fd_start = fd_end;
+    }
 
+timeout_skip:
 #ifdef _3DS
     /* check if the user wants to exit */
     hidScanInput();

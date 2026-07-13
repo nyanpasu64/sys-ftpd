@@ -14,6 +14,6 @@ typedef struct ftp_session_t ftp_session_t;
 
 void ftp_pre_init(void);
 int ftp_init(void);
-loop_status_t ftp_loop(void);
+loop_status_t ftp_iter(void);
 void ftp_exit(void);
 void ftp_post_exit(void);
