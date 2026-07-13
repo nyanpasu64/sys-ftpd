@@ -82,22 +82,7 @@ void __appExit(void)
     fsExit();
 }
 
-static loop_status_t loop(loop_status_t (*callback)(void))
-{
-    loop_status_t status = LOOP_CONTINUE;
-
-    while (true)
-    {
-        svcSleepThread(YieldType_ToAnyThread);
-        status = callback();
-        console_render();
-        if (status != LOOP_CONTINUE)
-            return status;
-        if (isPaused())
-            return LOOP_RESTART;
-    }
-    return LOOP_EXIT;
-}
+static loop_status_t loop(void);
 
 int main(int argc, char** argv)
 {
@@ -147,7 +132,7 @@ int main(int argc, char** argv)
         if (ftp_init() == 0)
         {
             /* ftp loop */
-            status = loop(ftp_loop);
+            status = loop();
 
             /* done with ftp */
             ftp_exit();
@@ -155,9 +140,18 @@ int main(int argc, char** argv)
         else
             status = LOOP_EXIT;
     }
-    // ftp_post_exit();
+}
 
-    // pauseExit();
-
-    // return 0;
+static loop_status_t loop(void)
+{
+    while (true)
+    {
+        svcSleepThread(YieldType_ToAnyThread);
+        loop_status_t status = ftp_loop();
+        console_render();
+        if (status != LOOP_CONTINUE)
+            return status;
+        if (isPaused())
+            return LOOP_RESTART;
+    }
 }
