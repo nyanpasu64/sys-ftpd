@@ -2194,15 +2194,14 @@ ftp_iter(void)
         /* wifi got disabled */
         console_print(RED "poll: FAILED! %d %s\n" RESET, errno, strerror(errno));
 
+        // if we encounter an error polling, tear down all sessions and the listen fd.
+        // if we encounter an error in a session, tear down the session (and the next
+        // error and so on) until it stops.
+        // FIXME we don't actually tear down sessions on OOM!
         if (errno == ENETDOWN)
             return LOOP_RESTART;
         if (errno == ENOMEM)
-            // kill the first session and try again
-            if (sess_list != NULL)
-            {
-                ftp_session_dispatch(sess_list, pollinfo + 1, session_to_fdend[1] - 1, rc);
-                return LOOP_CONTINUE;
-            }
+            return LOOP_RESTART; // exits loop(), calls ftp_exit() and ftp_init(), just without delay
 
         return LOOP_EXIT;
     }
