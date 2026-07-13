@@ -298,6 +298,8 @@ static in_port_t data_port = DATA_PORT;
 #endif
 /*! list of ftp sessions */
 static ftp_session_t* sessions = NULL;
+// number of FTP sessions
+static unsigned num_sessions = 0;
 /*! socket buffersize */
 static int sock_buffersize = SOCK_BUFFERSIZE;
 /*! server start time */
@@ -1285,10 +1287,13 @@ ftp_session_destroy(ftp_session_t* session)
     }
 
     /* deallocate */
+    num_sessions--;
     free(session);
 
     return next;
 }
+
+#define MAX_SESSIONS 16
 
 /*! allocate new ftp session
  *
@@ -1313,6 +1318,15 @@ ftp_session_new(int listen_fd)
 
     console_print(CYAN "accepted connection from %s:%u\n" RESET,
                   inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+
+    // if you have 16 FTP sessions open at a time, chances are you're not succeeding
+    // with allocations anyway.
+    if (num_sessions >= MAX_SESSIONS)
+    {
+        console_print("too many sessions (%u >= %u)\n", num_sessions, MAX_SESSIONS);
+        ftp_closesocket(new_fd, SocketConnected, ShrinkNo);
+        return -1;
+    }
 
     /* allocate a new session */
     session = (ftp_session_t*)calloc(1, sizeof(ftp_session_t));
@@ -1347,6 +1361,7 @@ ftp_session_new(int listen_fd)
         session->prev = sessions->prev;
         sessions->prev = session;
     }
+    num_sessions++;
 
     /* copy socket address to pasv address */
     addrlen = sizeof(session->pasv_addr);
@@ -2100,6 +2115,11 @@ void ftp_exit(void)
     /* clean up all sessions */
     while (sessions != NULL)
         ftp_session_destroy(sessions);
+    if (num_sessions != 0)
+    {
+        console_print("error, num_sessions = %u at ftp_exit()", num_sessions);
+        num_sessions = 0;
+    }
 
     /* stop listening for new clients */
     if (listenfd >= 0)
