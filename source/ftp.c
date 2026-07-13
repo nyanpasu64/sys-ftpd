@@ -1723,6 +1723,15 @@ ftp_session_read_command(ftp_session_t* session,
     }
 }
 
+static bool is_poll_err(short revents)
+{
+    if (revents & POLLERR)
+        return true;
+    if ((revents & POLLHUP) && !(revents & POLLIN))
+        return true;
+    return false;
+}
+
 /*! poll sockets for ftp session
  *
  *  @param[in] session ftp session
@@ -1793,7 +1802,9 @@ ftp_session_poll(ftp_session_t* session)
                 console_print(YELLOW "cmd_fd: revents=0x%08X\n" RESET, pollinfo[0].revents);
 
             /* we need to read a new command */
-            if (pollinfo[0].revents & (POLLERR | POLLHUP))
+            // IDK the correct POLLHUP handling. "The control connection shall be closed
+            // by the server at the user's request" (https://www.rfc-editor.org/info/rfc959/#page-44)
+            if (is_poll_err(pollinfo[0].revents))
             {
                 debug_print("cmd revents=0x%x\n", pollinfo[0].revents);
                 ftp_session_close_cmd(session);
@@ -1843,7 +1854,9 @@ ftp_session_poll(ftp_session_t* session)
                     console_print(YELLOW "data_fd: revents=0x%08X\n" RESET, pollinfo[1].revents);
 
                 /* we need to transfer data */
-                if (pollinfo[1].revents & (POLLERR | POLLHUP))
+                // POLLHUP is abnormal, but keep reading remaining data.
+                // (https://www.rfc-editor.org/info/rfc959/#page-45)
+                if (is_poll_err(pollinfo[1].revents))
                 {
                     ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
                     ftp_send_response(session, 426, "Data connection failed\r\n");
