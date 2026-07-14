@@ -735,13 +735,25 @@ ftp_session_close_file(ftp_session_t* session)
     session->filepos = 0;
 }
 
+typedef enum ErrorHandling
+{
+    ErrNone = 0,
+    ErrCont = -1,
+    ErrShutdown = -2,
+} ErrorHandling;
+
+#define EXIT_ERRNO()                       \
+    if (errno == ENOMEM || errno == ENOSR) \
+        return ErrShutdown;                \
+    return ErrCont;
+
 /*! open file for reading for ftp session
  *
  *  @param[in] session ftp session
  *
  *  @returns -1 for error
  */
-static int
+static ErrorHandling
 ftp_session_open_file_read(ftp_session_t* session)
 {
     TRACE();
@@ -752,14 +764,14 @@ ftp_session_open_file_read(ftp_session_t* session)
     if (!strcmp("/config/sys-ftpd/logs/ftpd.log", session->buffer))
     {
         console_print(RED "Tried to open ftpd.log for reading. That's not allowed!\n");
-        return -1;
+        return ErrCont;
     }
 
     session->fp = fopen(session->buffer, "rb");
     if (session->fp == NULL)
     {
         console_print(RED "fopen '%s': %d %s\n" RESET, session->buffer, errno, strerror(errno));
-        return -1;
+        EXIT_ERRNO();
     }
 
     /* it's okay if this fails */
@@ -775,7 +787,7 @@ ftp_session_open_file_read(ftp_session_t* session)
     if (rc != 0)
     {
         console_print(RED "fstat '%s': %d %s\n" RESET, session->buffer, errno, strerror(errno));
-        return -1;
+        EXIT_ERRNO();
     }
     session->filesize = st.st_size;
 
@@ -785,11 +797,11 @@ ftp_session_open_file_read(ftp_session_t* session)
         if (rc != 0)
         {
             console_print(RED "fseek '%s': %d %s\n" RESET, session->buffer, errno, strerror(errno));
-            return -1;
+            EXIT_ERRNO();
         }
     }
 
-    return 0;
+    return ErrNone;
 }
 
 /*! read from an open file for ftp session
@@ -826,7 +838,7 @@ ftp_session_read_file(ftp_session_t* session)
  *
  *  @note truncates file
  */
-static int
+static ErrorHandling
 ftp_session_open_file_write(ftp_session_t* session,
                             bool append)
 {
@@ -837,7 +849,7 @@ ftp_session_open_file_write(ftp_session_t* session,
     if (!strcmp("/config/sys-ftpd/logs/ftpd.log", session->buffer))
     {
         console_print(RED "Tried to open ftpd.log for writing. That's not allowed!");
-        return -1;
+        return ErrCont;
     }
 
     if (append)
@@ -858,7 +870,7 @@ ftp_session_open_file_write(ftp_session_t* session,
     if (session->fp == NULL)
     {
         console_print(RED "fopen '%s': %d %s\n" RESET, session->buffer, errno, strerror(errno));
-        return -1;
+        EXIT_ERRNO();
     }
 
     update_free_space();
@@ -879,11 +891,11 @@ ftp_session_open_file_write(ftp_session_t* session,
         if (rc != 0)
         {
             console_print(RED "fseek '%s': %d %s\n" RESET, session->buffer, errno, strerror(errno));
-            return -1;
+            EXIT_ERRNO();
         }
     }
 
-    return 0;
+    return ErrNone;
 }
 
 /*! write to an open file for ftp session
@@ -942,7 +954,7 @@ ftp_session_close_cwd(ftp_session_t* session)
  *
  *  @return -1 for failure
  */
-static int
+static ErrorHandling
 ftp_session_open_cwd(ftp_session_t* session)
 {
     indent_session(session, "ftp_session_open_cwd(\"%s\")\n", session->cwd);
@@ -951,7 +963,7 @@ ftp_session_open_cwd(ftp_session_t* session)
     if (session->dp == NULL)
     {
         console_print(RED "opendir '%s': %d %s\n" RESET, session->cwd, errno, strerror(errno));
-        return -1;
+        EXIT_ERRNO()
     }
 
     return 0;
@@ -2909,7 +2921,7 @@ ftp_xfer_file(ftp_session_t* session,
               xfer_file_mode_t mode)
 {
     TRACE_FMT("ftp_xfer_file(\"%s\", %u, %d)\n", args ? args : "", mode);
-    int rc;
+    ErrorHandling rc;
 
     /* build the path of the file to transfer */
     if (build_path(session, session->cwd, args) != 0)
@@ -2992,6 +3004,7 @@ ftp_xfer_dir(ftp_session_t* session,
     size_t len;
     struct stat st;
     char* buffer;
+    ErrorHandling err;
 
     /* set up the transfer */
     session->dir_mode = mode;
@@ -3106,11 +3119,13 @@ ftp_xfer_dir(ftp_session_t* session,
             }
         }
     }
-    else if (ftp_session_open_cwd(session) != 0)
+    else if ((err = ftp_session_open_cwd(session)) != 0)
     {
         /* no argument, but opening cwd failed */
         ftp_session_set_state(session, COMMAND_STATE, CLOSE_PASV | CLOSE_DATA);
         ftp_send_response(session, 550, "%s\r\n", strerror(errno));
+        if (err == ErrShutdown)
+            ftp_session_close_cmd(session);
         return;
     }
     else
