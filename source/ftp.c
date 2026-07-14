@@ -279,6 +279,10 @@ static void indent_session(const ftp_session_t* session, const char* fmt, ...)
 
 static Printable enter_fmt(ftp_session_t* session, const char* const fmt, ...)
 {
+    if (!should_log)
+        return (Printable){
+            session};
+
     const __auto_type indent = session->depth * INDENT_WIDTH;
     TEST(pasv)
     TEST(data)
@@ -301,6 +305,8 @@ static Printable enter_fmt(ftp_session_t* session, const char* const fmt, ...)
 
 static void exit_func(const Printable* p)
 {
+    if (!should_log)
+        return;
     if (!p->maybe_session)
         return;
     const __auto_type session = p->maybe_session;
@@ -314,6 +320,8 @@ static void exit_func(const Printable* p)
 
 static void stub_func(ftp_session_t* session, const char* const func)
 {
+    if (!should_log)
+        return;
     session_print(session, "{} ");
     indent_print(0, "%s\n", func);
 }
