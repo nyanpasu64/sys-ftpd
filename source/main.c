@@ -101,6 +101,11 @@ int main(int argc, char** argv)
 
     console_init();
 
+    int rc = access(CONFIGPATH, R_OK);
+    if (rc == -1 && errno == ENOENT)
+        // can't be assed to write a file copy function, just rename the example file
+        rename("/config/sys-ftpd/config.ini.template", CONFIGPATH);
+
     char buffer[100];
     ini_gets("Pause", "disabled:", "0", buffer, 100, CONFIGPATH);
 
