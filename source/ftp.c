@@ -1843,46 +1843,6 @@ ftp_session_dispatch(ftp_session_t* session, const struct pollfd* pollinfo, nfds
 static void
 update_free_space(void)
 {
-#if defined(_3DS) || defined(__SWITCH__)
-#    define KiB (1024.0)
-#    define MiB (1024.0 * KiB)
-#    define GiB (1024.0 * MiB)
-    char buffer[16];
-    struct statvfs st;
-    double bytes_free;
-    int rc, len;
-
-    rc = statvfs("sdmc:/", &st);
-    if (rc != 0)
-        console_print(RED "statvfs: %d %s\n" RESET, errno, strerror(errno));
-    else
-    {
-        bytes_free = (double)st.f_bsize * st.f_bfree;
-
-        if (bytes_free < 1000.0)
-            len = snprintf(buffer, sizeof(buffer), "%.0lfB", bytes_free);
-        else if (bytes_free < 10.0 * KiB)
-            len = snprintf(buffer, sizeof(buffer), "%.2lfKiB", floor((bytes_free * 100.0) / KiB) / 100.0);
-        else if (bytes_free < 100.0 * KiB)
-            len = snprintf(buffer, sizeof(buffer), "%.1lfKiB", floor((bytes_free * 10.0) / KiB) / 10.0);
-        else if (bytes_free < 1000.0 * KiB)
-            len = snprintf(buffer, sizeof(buffer), "%.0lfKiB", floor(bytes_free / KiB));
-        else if (bytes_free < 10.0 * MiB)
-            len = snprintf(buffer, sizeof(buffer), "%.2lfMiB", floor((bytes_free * 100.0) / MiB) / 100.0);
-        else if (bytes_free < 100.0 * MiB)
-            len = snprintf(buffer, sizeof(buffer), "%.1lfMiB", floor((bytes_free * 10.0) / MiB) / 10.0);
-        else if (bytes_free < 1000.0 * MiB)
-            len = snprintf(buffer, sizeof(buffer), "%.0lfMiB", floor(bytes_free / MiB));
-        else if (bytes_free < 10.0 * GiB)
-            len = snprintf(buffer, sizeof(buffer), "%.2lfGiB", floor((bytes_free * 100.0) / GiB) / 100.0);
-        else if (bytes_free < 100.0 * GiB)
-            len = snprintf(buffer, sizeof(buffer), "%.1lfGiB", floor((bytes_free * 10.0) / GiB) / 10.0);
-        else
-            len = snprintf(buffer, sizeof(buffer), "%.0lfGiB", floor(bytes_free / GiB));
-
-        console_set_status("\x1b[0;%dH" GREEN "%s", 50 - len, buffer);
-    }
-#endif
 }
 
 /*! Update status bar */
