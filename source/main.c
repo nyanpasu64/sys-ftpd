@@ -148,7 +148,7 @@ static loop_status_t loop(void)
     {
         svcSleepThread(YieldType_ToAnyThread);
         loop_status_t status = ftp_iter();
-        console_render();
+        console_flush();
         if (status != LOOP_CONTINUE)
             return status;
         if (isPaused())

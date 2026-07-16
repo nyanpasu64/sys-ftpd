@@ -2,9 +2,12 @@
 
 #pragma once
 
+#include <stdarg.h>
+#include <switch/types.h>
+
 #ifdef _3DS
 #    include <3ds.h>
-#    define ESC(x) "\x1b[" #    x
+#    define ESC(x) "\x1b[" #x
 #    define RESET ESC(0m)
 #    define BLACK ESC(30m)
 #    define RED ESC(31; 1m)
@@ -31,10 +34,11 @@ extern int should_log;
 
 void console_init(void);
 
-__attribute__((format(printf, 1, 2))) void console_set_status(const char* fmt, ...);
+#define console_set_status(...)
 
+void _indent_print(size_t indent, const char* fmt, va_list ap);
 __attribute__((format(printf, 1, 2))) void console_print(const char* fmt, ...);
-
+__attribute__((format(printf, 2, 3))) void indent_print(size_t indent, const char* fmt, ...);
 __attribute__((format(printf, 1, 2))) void debug_print(const char* fmt, ...);
 
-void console_render(void);
+void console_flush(void);
