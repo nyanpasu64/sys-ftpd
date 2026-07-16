@@ -14,6 +14,7 @@ int should_log = 0;
 
 void console_init(void)
 {
+    stdout = stderr = NULL;
 }
 
 static const char INDENT_BUF[] = "                                                                ";

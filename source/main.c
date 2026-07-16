@@ -99,6 +99,8 @@ int main(int argc, char** argv)
         unlink("/config/sys-ftpd/logs/ftpd.log");
     }
 
+    console_init();
+
     char buffer[100];
     ini_gets("Pause", "disabled:", "0", buffer, 100, CONFIGPATH);
 
