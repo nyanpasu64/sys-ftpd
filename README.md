@@ -5,14 +5,14 @@
 This is a lightweight FTP server that runs in the background on your Nintendo Switch.
 
  - It's a lightweight version of mtheall's [ftpd](https://github.com/mtheall/ftpd) app run as a background service (sysmodule).
- - Originally forked from jakibaki's [sys-ftpd](https://github.com/jakibaki/sys-ftpd) in an attempt to improve peformance and stability.  
+ - Originally forked from jakibaki's [sys-ftpd](https://github.com/jakibaki/sys-ftpd) in an attempt to improve peformance and stability.
 
 Since it's lightweight, it occupies less memory on your console at the cost of transferring files a bit slower. If you want to transfer large files, I would suggest you install mtheall's [ftpd](https://github.com/mtheall/ftpd) separately and run it whenever you need to make a large file transfer.
 
 ## How to use
 1. Go to the [latest release](https://github.com/cathery/sys-ftpd/releases/latest) and download the sys-ftpd zip folder. (not the source code)
 2. Extract the contents of the folder to the root of your Nintendo Switch's SD card. (it should overlap with your existing atmosphere and config folders)
-3. Go to config/sys-ftpd/config.ini and set your username and password for the FTP server. (otherwise it won't let you connect)
+3. Go to config/sys-ftpd/config.ini(.template) and set your username and password for the FTP server. (otherwise it won't let you connect)
    - Alternatively you can enable anonymous mode, which will let anyone in the network connect to your FTP server without credentials. (unsafe)
 4. Boot/reboot your Nintendo Switch into CFW as usual.
 5. Once your console is connected to a network, you can connect to your server with any FTP client (you can find them online) from any computer within the same network.
@@ -22,6 +22,17 @@ Since it's lightweight, it occupies less memory on your console at the cost of t
 6. You should now be able to enjoy accessing your Nintendo Switch files remotely.
 
 ## Other
+
+- On KDE Dolphin, you'll want to create a file at `.config/kio_ftprc`:
+
+```ini
+[<default>]
+MaxConnections=2
+```
+
+- This prevents Dolphin from creating too many FTP sessions (each with its own command socket and per-file data sockets in parallel), resulting in memory overload and dropped sessions. Do not use 1 or else you cannot copy files between folders on the Switch.
+   - This trick was documented at the [Unix Stack Exchange](https://unix.stackexchange.com/a/806490). It works because in KDE's `SchedulerPrivate::protoQ()`, "MaxConnections" overrides ftp.json "maxInstancesPerHost" -> `maxWorkersPerHost`. Yes it's confusing, don't ask me why they designed it like this.
+- You can enable logs by creating an empty file at `/config/sys-ftpd/logs/ftpd_log_enabled` and rebooting your Switch (or sysmodule). Note that this *will* slow down data transfers and increase SD card wear; rename or delete this file before performing large transfers or when you no longer need logs.
 
 Hotkeys: To help with security while there is are no login credentials, debugging, or otherwise, you can pause/resume running the server using the PLUS+MINUS+X button combination.
 
