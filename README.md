@@ -33,6 +33,7 @@ MaxConnections=2
 - This prevents Dolphin from creating too many FTP sessions (each with its own command socket and per-file data sockets in parallel), resulting in memory overload and dropped sessions. Do not use 1 or else you cannot copy files between folders on the Switch.
    - This trick was documented at the [Unix Stack Exchange](https://unix.stackexchange.com/a/806490). It works because in KDE's `SchedulerPrivate::protoQ()`, "MaxConnections" overrides ftp.json "maxInstancesPerHost" -> `maxWorkersPerHost`. Yes it's confusing, don't ask me why they designed it like this.
 - You can enable logs by creating an empty file at `/config/sys-ftpd/logs/ftpd_log_enabled` and rebooting your Switch (or sysmodule). Note that this *will* slow down data transfers and increase SD card wear; rename or delete this file before performing large transfers or when you no longer need logs.
+- If attaching gdb to `sys-ftpd` on the Switch, you may want to install [patch-dwarf](https://codeberg.org/nyanpasu64/patch-dwarf) and run `patch-dwarf *.elf` to fix backtrace function names. This is a workaround for a ld bug where when `--gc-sections` deletes functions, ld sets their DWARF addresses to 0 but keeps the length fields intact, causing gdb to see multiple functions claiming the same code address.
 
 Hotkeys: To help with security while there is are no login credentials, debugging, or otherwise, you can pause/resume running the server using the PLUS+MINUS+X button combination.
 
