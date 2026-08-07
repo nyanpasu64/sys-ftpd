@@ -210,6 +210,8 @@ struct ftp_session_t
     uint64_t filesize; // persistent file size between callbacks
     FILE* fp;          // persistent open file pointer between callbacks
     DIR* dp;           // persistent open directory pointer between callbacks
+    char username[64];
+    bool anonymous_login;
     bool user_ok;
     bool pass_ok;
     bool led;
@@ -1148,7 +1150,7 @@ ftp_session_fill_dirent_type(ftp_session_t* session, const struct stat* st,
         /* perms nlinks owner group size */
         session->buffersize +=
             sprintf(session->buffer + session->buffersize,
-                    "%c%c%c%c%c%c%c%c%c%c %lu 3DS 3DS %lld ",
+                    "%c%c%c%c%c%c%c%c%c%c %lu %s %s %lld ",
                     S_ISREG(st->st_mode) ? '-' : S_ISDIR(st->st_mode) ? 'd'
                                              :
 #if !defined(_3DS) && !defined(__SWITCH__)
@@ -1170,6 +1172,8 @@ ftp_session_fill_dirent_type(ftp_session_t* session, const struct stat* st,
                     st->st_mode & S_IWOTH ? 'w' : '-',
                     st->st_mode & S_IXOTH ? 'x' : '-',
                     (unsigned long)st->st_nlink,
+                    session->username,
+                    session->username,
                     (signed long long)st->st_size);
 
         /* timestamp */
@@ -1538,6 +1542,14 @@ ftp_session_new(int listen_fd)
     }
 
     /* initialize session */
+    char str_anony[2];
+    ini_gets("Anonymous", "anonymous:", "0", str_anony, sizearray(str_anony), CONFIGPATH);
+    session->anonymous_login = (*str_anony == '1');
+    if (session->anonymous_login)
+        strcpy(session->username, "switch");
+    else
+        ini_gets("User", "user:", "dummy", session->username, sizearray(session->username), CONFIGPATH);
+
     strcpy(session->cwd, "/");
     session->peer_addr.sin_addr.s_addr = INADDR_ANY;
     session->generation = next_even();
@@ -4496,9 +4508,7 @@ FTP_DECLARE(TYPE)
 FTP_DECLARE(USER)
 {
     TRACE_ARGS();
-    char str_anony[2];
-    ini_gets("Anonymous", "anonymous:", "0", str_anony, sizearray(str_anony), CONFIGPATH);
-    if (*str_anony == '1')
+    if (session->anonymous_login)
     {
         session->user_ok = true;
         session->pass_ok = true;
@@ -4511,14 +4521,12 @@ FTP_DECLARE(USER)
     // reset authentication state
     session->user_ok = false;
     session->pass_ok = false;
-    char str_user[64];
-    ini_gets("User", "user:", "dummy", str_user, sizearray(str_user), CONFIGPATH);
-    if (*str_user == '\0')
+    if (*session->username == '\0')
     {
         user_pass_not_set(session);
         return;
     }
-    if (strcmp(str_user, args) == 0)
+    if (strcmp(session->username, args) == 0)
     {
         // username is ok, wait for the password
         session->user_ok = true;
