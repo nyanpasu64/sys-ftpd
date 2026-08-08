@@ -40,12 +40,15 @@ void __libnx_initheap(void)
     fake_heap_end = fake_heap + HEAP_SIZE;
 }
 
+void __libnx_init_time(void);
+
 void __appInit(void)
 {
     R_ASSERT(smInitialize());
     R_ASSERT(fsInitialize());
     R_ASSERT(fsdevMountSdmc());
     R_ASSERT(timeInitialize());
+    __libnx_init_time();
     R_ASSERT(hidInitialize());
     R_ASSERT(hidsysInitialize());
     R_ASSERT(setsysInitialize());
