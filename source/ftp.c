@@ -2490,6 +2490,7 @@ validate_path(const char* args)
     {
         if (p[3] == 0 || p[3] == '/')
             return -1;
+        p += 3;
     }
 
     /* make sure there are no '//' */
